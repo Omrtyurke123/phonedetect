@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI ExamGuard — كشف الهاتف المحمول</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a212b; --line: #2a3441; --text: #e8edf3; --muted: #8b98a8;
+    --ok: #2ecc71; --alert: #ff3b3b; --accent: #4da3ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif; line-height: 1.6; }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 1.25rem; }
+  header span { color: var(--muted); font-size: .9rem; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { main { grid-template-columns: 1.6fr 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .stage { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 10px; overflow: hidden; }
+  .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .banner { position: absolute; top: 0; left: 0; right: 0; background: var(--alert); color: #fff; text-align: center;
+    font-weight: 700; font-size: 1.4rem; padding: 10px; display: none; letter-spacing: 1px; }
+  .banner.on { display: block; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .75; } }
+  .hud { position: absolute; bottom: 8px; right: 10px; left: 10px; display: flex; justify-content: space-between;
+    font-size: .85rem; color: #fff; text-shadow: 0 1px 3px #000; direction: ltr; }
+  .placeholder { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 20px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 10px 18px; font-weight: 600; }
+  .primary { background: var(--accent); color: #04121f; }
+  .danger { background: #3a2226; color: #ff8d8d; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  select { font: inherit; background: #0f1419; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px; }
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: flex; justify-content: space-between; font-size: .9rem; color: var(--muted); }
+  .field label b { color: var(--text); direction: ltr; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  #status { font-size: .9rem; color: var(--muted); margin-top: 10px; min-height: 1.4em; }
+  #log { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; font-size: .88rem; }
+  #log li { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  #log li.alert { color: #ff8d8d; }
+  #log li.empty { color: var(--muted); border: 0; }
+  .note { font-size: .8rem; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ AI ExamGuard</h1>
+  <span>كشف الهاتف المحمول لحظياً — يعمل بالكامل داخل المتصفح، ولا يتم رفع أي فيديو لأي سيرفر</span>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="banner" class="banner">⚠️ PHONE DETECTED — تم رصد هاتف</div>
+      <div id="placeholder" class="placeholder">اضغط «تشغيل الكاميرا» للبدء</div>
+      <div class="hud"><span id="hudHits">Hits: 0/0</span><span id="hudFps">FPS: 0</span></div>
+    </div>
+    <div class="row">
+      <button id="startBtn" class="primary">▶ تشغيل الكاميرا</button>
+      <button id="stopBtn" class="danger" disabled>■ إيقاف</button>
+      <select id="camSelect" title="اختيار الكاميرا"></select>
+      <button id="testSoundBtn" type="button">🔊 اختبار الصوت</button>
+    </div>
+    <div id="status">جارٍ تحميل الموديل…</div>
+  </section>
+
+  <aside style="display:grid; gap:16px; align-content:start;">
+    <section class="panel">
+      <h2>⚙️ الإعدادات</h2>
+      <div class="field"><label>حد الثقة للتنبيه <b id="vPhone">0.35</b></label>
+        <input type="range" id="phoneConf" min="0.15" max="0.95" step="0.01" value="0.35"></div>
+      <div class="field"><label>حد الثقة للرسم على الشاشة <b id="vDisp">0.25</b></label>
+        <input type="range" id="dispConf" min="0.1" max="0.9" step="0.01" value="0.25"></div>
+      <div class="field"><label>عدد الفريمات المراقَبة (Window) <b id="vWin">10</b></label>
+        <input type="range" id="winSize" min="3" max="30" step="1" value="10"></div>
+      <div class="field"><label>أقل عدد رصدات للتنبيه (Min hits) <b id="vHits">5</b></label>
+        <input type="range" id="minHits" min="1" max="30" step="1" value="5"></div>
+      <div class="field"><label><span>🔊 صوت التنبيه</span>
+        <input type="checkbox" id="sound" checked></label></div>
+      <p class="note">زوّد «الثقة» أو «Min hits» لتقليل الإنذارات الكاذبة، وقلّلهم لحساسية أعلى.</p>
+    </section>
+
+    <section class="panel">
+      <h2>📋 سجل التنبيهات</h2>
+      <ul id="log"><li class="empty">لا توجد تنبيهات بعد</li></ul>
+    </section>
+  </aside>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script>
+// ----------------------------- SETTINGS -----------------------------
+const MODEL_URL   = "model/yolo11n.onnx";   // لاحقاً: "model/best.onnx" للموديل المخصص
+const CLASSES_URL = "model/classes.json";   // اختياري: أسماء كلاسات الموديل المخصص (مصفوفة نصوص)
+const PHONE_CLASS_NAMES = new Set(["cell phone", "phone", "mobile phone", "cellphone", "smartphone"]);
+const NMS_IOU = 0.45;
+// --------------------------------------------------------------------
+
+const COCO = ["person","bicycle","car","motorcycle","airplane","bus","train","truck","boat","traffic light",
+"fire hydrant","stop sign","parking meter","bench","bird","cat","dog","horse","sheep","cow","elephant","bear",
+"zebra","giraffe","backpack","umbrella","handbag","tie","suitcase","frisbee","skis","snowboard","sports ball",
+"kite","baseball bat","baseball glove","skateboard","surfboard","tennis racket","bottle","wine glass","cup",
+"fork","knife","spoon","bowl","banana","apple","sandwich","orange","broccoli","carrot","hot dog","pizza","donut",
+"cake","chair","couch","potted plant","bed","dining table","toilet","tv","laptop","mouse","remote","keyboard",
+"cell phone","microwave","oven","toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear",
+"hair drier","toothbrush"];
+
+const $ = id => document.getElementById(id);
+const video = $("video"), overlay = $("overlay"), ctx = overlay.getContext("2d");
+const work = document.createElement("canvas"), wctx = work.getContext("2d", { willReadFrequently: true });
+
+let session = null, inputName = "", inputSize = 640, classNames = COCO, phoneIds = new Set();
+let stream = null, running = false, audioCtx = null;
+let history = [], latched = false, fps = 0, prevT = performance.now();
+
+// ---- settings UI ----
+const cfg = { phoneConf: .5, dispConf: .25, win: 10, minHits: 5, sound: true };
+function bind(id, key, label, fmt = v => v) {
+  const el = $(id);
+  const update = () => { cfg[key] = parseFloat(el.value); $(label).textContent = fmt(cfg[key]); };
+  el.addEventListener("input", update); update();
+}
+bind("phoneConf", "phoneConf", "vPhone", v => v.toFixed(2));
+bind("dispConf", "dispConf", "vDisp", v => v.toFixed(2));
+bind("winSize", "win", "vWin");
+bind("minHits", "minHits", "vHits");
+$("sound").addEventListener("change", e => cfg.sound = e.target.checked);
+
+function setStatus(t) { $("status").textContent = t; }
+
+// ---- model ----
+async function loadModel() {
+  try {
+    ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+    ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+    try {
+      const r = await fetch(CLASSES_URL);
+      if (r.ok) classNames = await r.json();
+    } catch (_) {}
+    session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+    inputName = session.inputNames[0];
+    const dims = session.inputMetadata?.[inputName]?.shape;
+    if (Array.isArray(dims) && Number.isInteger(dims[2])) inputSize = dims[2];
+    work.width = work.height = inputSize;
+    phoneIds = new Set();
+    classNames.forEach((n, i) => { if (PHONE_CLASS_NAMES.has(String(n).toLowerCase().replace(/_/g, " "))) phoneIds.add(i); });
+    if (phoneIds.size) setStatus(`✅ الموديل جاهز (${classNames.length} كلاس). اضغط «تشغيل الكاميرا».`);
+    else setStatus("⚠️ الموديل لا يحتوي كلاس هاتف — التنبيهات معطّلة. تحتاج تدريب موديل مخصص.");
+    $("startBtn").disabled = false;
+  } catch (e) {
+    console.error(e);
+    setStatus("❌ تعذّر تحميل الموديل: " + e.message + " — تأكد من وجود الملف " + MODEL_URL);
+  }
+}
+
+// ---- camera ----
+async function listCameras() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+  const sel = $("camSelect"); const cur = sel.value;
+  sel.innerHTML = "";
+  devs.forEach((d, i) => { const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || `Camera ${i}`; sel.appendChild(o); });
+  if (cur) sel.value = cur;
+}
+
+async function startCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) { setStatus("❌ المتصفح لا يدعم الكاميرا، أو الصفحة ليست على HTTPS."); return; }
+  try {
+    ensureAudio();
+    const id = $("camSelect").value;
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: id ? { deviceId: { exact: id }, width: 640, height: 480 } : { width: 640, height: 480 }, audio: false });
+    video.srcObject = stream; await video.play();
+    await listCameras();
+    overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+    $("placeholder").style.display = "none";
+    $("startBtn").disabled = true; $("stopBtn").disabled = false;
+    history = []; latched = false; running = true; prevT = performance.now();
+    setStatus("🟢 المراقبة تعمل");
+    loop();
+  } catch (e) {
+    setStatus("❌ تعذّر فتح الكاميرا: " + e.message + " (اسمح بصلاحية الكاميرا وأغلق أي برنامج يستخدمها).");
+  }
+}
+
+function stopCamera() {
+  running = false;
+  stream?.getTracks().forEach(t => t.stop());
+  video.srcObject = null; ctx.clearRect(0, 0, overlay.width, overlay.height);
+  $("banner").classList.remove("on"); $("placeholder").style.display = "grid";
+  $("startBtn").disabled = !session; $("stopBtn").disabled = true;
+  setStatus("⏹ تم الإيقاف");
+}
+
+// ---- inference ----
+function preprocess() {
+  const vw = video.videoWidth, vh = video.videoHeight, S = inputSize;
+  const scale = Math.min(S / vw, S / vh);
+  const nw = Math.round(vw * scale), nh = Math.round(vh * scale);
+  const padX = Math.floor((S - nw) / 2), padY = Math.floor((S - nh) / 2);
+  wctx.fillStyle = "rgb(114,114,114)"; wctx.fillRect(0, 0, S, S);
+  wctx.drawImage(video, padX, padY, nw, nh);
+  const px = wctx.getImageData(0, 0, S, S).data, n = S * S, f = new Float32Array(3 * n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) { f[i] = px[j] / 255; f[n + i] = px[j + 1] / 255; f[2 * n + i] = px[j + 2] / 255; }
+  return { tensor: new ort.Tensor("float32", f, [1, 3, S, S]), scale, padX, padY };
+}
+
+function iou(a, b) {
+  const x1 = Math.max(a.x1, b.x1), y1 = Math.max(a.y1, b.y1), x2 = Math.min(a.x2, b.x2), y2 = Math.min(a.y2, b.y2);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const ua = (a.x2 - a.x1) * (a.y2 - a.y1) + (b.x2 - b.x1) * (b.y2 - b.y1) - inter;
+  return ua > 0 ? inter / ua : 0;
+}
+
+function postprocess(out, pre) {
+  const d = out.dims;                      // [1, 4+nc, N]
+  const nc = d[1] - 4, N = d[2], data = out.data, boxes = [];
+  for (let i = 0; i < N; i++) {
+    let best = -1, bs = 0;
+    for (let c = 0; c < nc; c++) { const s = data[(4 + c) * N + i]; if (s > bs) { bs = s; best = c; } }
+    if (bs < cfg.dispConf) continue;
+    const cx = data[i], cy = data[N + i], w = data[2 * N + i], h = data[3 * N + i];
+    boxes.push({ cls: best, conf: bs,
+      x1: (cx - w / 2 - pre.padX) / pre.scale, y1: (cy - h / 2 - pre.padY) / pre.scale,
+      x2: (cx + w / 2 - pre.padX) / pre.scale, y2: (cy + h / 2 - pre.padY) / pre.scale });
+  }
+  boxes.sort((a, b) => b.conf - a.conf);
+  const keep = [];
+  for (const b of boxes) if (!keep.some(k => k.cls === b.cls && iou(k, b) > NMS_IOU)) keep.push(b);
+  return keep;
+}
+
+let bestPhone = 0;
+function draw(dets) {
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  ctx.lineWidth = 2; ctx.font = "600 15px Arial"; ctx.textBaseline = "bottom";
+  let phone = false; bestPhone = 0;
+  for (const b of dets) {
+    const isPhoneClass = phoneIds.has(b.cls);
+    if (isPhoneClass) bestPhone = Math.max(bestPhone, b.conf);
+    const isPhone = isPhoneClass && b.conf >= cfg.phoneConf;
+    if (isPhone) phone = true;
+    // أحمر = هاتف مؤكد، برتقالي = هاتف بثقة أقل من حد التنبيه، أخضر = أي شيء آخر
+    const col = isPhone ? "#ff3b3b" : (isPhoneClass ? "#ff9f1c" : "#2ecc71");
+    ctx.strokeStyle = col; ctx.strokeRect(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
+    const label = `${classNames[b.cls] ?? "class " + b.cls} ${b.conf.toFixed(2)}`;
+    const tw = ctx.measureText(label).width + 8, ty = Math.max(b.y1, 20);
+    ctx.fillStyle = col; ctx.fillRect(b.x1, ty - 20, tw, 20);
+    ctx.fillStyle = "#fff"; ctx.fillText(label, b.x1 + 4, ty - 3);
+  }
+  return phone;
+}
+
+function ensureAudio() {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state !== "running") audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+
+// صوت إنذار: 3 نغمات قصيرة بصوت عالٍ
+function beep(force = false) {
+  if (!force && !cfg.sound) return;
+  const ac = ensureAudio();
+  const t0 = ac.currentTime + 0.02;
+  for (let k = 0; k < 3; k++) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = "square"; o.frequency.value = k % 2 ? 880 : 1200;
+    o.connect(g); g.connect(ac.destination);
+    const s = t0 + k * 0.28;
+    g.gain.setValueAtTime(0.0001, s);
+    g.gain.exponentialRampToValueAtTime(0.6, s + 0.02);
+    g.gain.setValueAtTime(0.6, s + 0.18);
+    g.gain.exponentialRampToValueAtTime(0.0001, s + 0.24);
+    o.start(s); o.stop(s + 0.26);
+  }
+}
+
+function logAlert() {
+  const ul = $("log"); ul.querySelector(".empty")?.remove();
+  const li = document.createElement("li"); li.className = "alert";
+  li.textContent = `🚨 ${new Date().toLocaleTimeString("ar-EG")} — تم رصد هاتف`;
+  ul.prepend(li);
+}
+
+async function loop() {
+  if (!running) return;
+  if (video.readyState >= 2) {
+    try {
+      const pre = preprocess();
+      const res = await session.run({ [inputName]: pre.tensor });
+      const dets = postprocess(res[session.outputNames[0]], pre);
+      const phoneSeen = phoneIds.size ? draw(dets) : (draw(dets), false);
+
+      history.push(phoneSeen);
+      while (history.length > cfg.win) history.shift();
+      const hits = history.filter(Boolean).length;
+      const confirmed = hits >= cfg.minHits;
+
+      if (confirmed && !latched) { latched = true; beep(); logAlert(); }
+      else if (hits === 0) latched = false;
+      $("banner").classList.toggle("on", confirmed);
+
+      const now = performance.now();
+      fps = 0.9 * fps + 0.1 * (1000 / Math.max(now - prevT, 1)); prevT = now;
+      $("hudHits").textContent = `Phone hits: ${hits}/${history.length}  |  best phone conf: ${bestPhone.toFixed(2)} (need ≥ ${cfg.phoneConf.toFixed(2)})`;
+      $("hudFps").textContent = `FPS: ${fps.toFixed(0)}`;
+    } catch (e) { console.error(e); setStatus("❌ خطأ أثناء التحليل: " + e.message); running = false; return; }
+  }
+  requestAnimationFrame(loop);
+}
+
+$("startBtn").disabled = true;
+$("startBtn").addEventListener("click", startCamera);
+$("stopBtn").addEventListener("click", stopCamera);
+$("testSoundBtn").addEventListener("click", () => beep(true));
+// فك قفل الصوت عند أول لمسة في الصفحة (قيد المتصفحات)
+document.addEventListener("pointerdown", () => ensureAudio(), { once: true });
+loadModel();
+</script>
+</body>
+</html>
