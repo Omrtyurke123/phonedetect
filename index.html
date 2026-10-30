@@ -93,7 +93,7 @@
   </aside>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script src="lib/ort.wasm.min.js"></script>
 <script>
 // ----------------------------- SETTINGS -----------------------------
 const MODEL_URL   = "model/yolo11n.onnx";   // لاحقاً: "model/best.onnx" للموديل المخصص
@@ -135,15 +135,41 @@ $("sound").addEventListener("change", e => cfg.sound = e.target.checked);
 function setStatus(t) { $("status").textContent = t; }
 
 // ---- model ----
+// تنزيل ملف مع عرض النسبة، عشان نعرف لو التنزيل هو اللي واقف
+async function fetchWithProgress(url, label) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${label}: الملف غير موجود (HTTP ${res.status}) — ${url}`);
+  const total = Number(res.headers.get("Content-Length")) || 0;
+  const reader = res.body.getReader(), chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    setStatus(`⏳ تحميل ${label}… ${(got / 1048576).toFixed(1)}${total ? " / " + (total / 1048576).toFixed(1) : ""} MB`);
+  }
+  const bytes = new Uint8Array(got); let o = 0;
+  for (const c of chunks) { bytes.set(c, o); o += c.length; }
+  return bytes;
+}
+// لو عملية واقفة أكتر من المدة المحددة نطلّع رسالة بدل ما نفضل نستنى للأبد
+function withTimeout(p, ms, msg) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
+}
 async function loadModel() {
   try {
-    ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+    if (typeof ort === "undefined") throw new Error("مكتبة ONNX لم تُحمَّل — تأكد من وجود الملف lib/ort.wasm.min.js");
+    ort.env.wasm.wasmPaths = new URL("lib/", location.href).href;
     ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
     try {
       const r = await fetch(CLASSES_URL);
       if (r.ok) classNames = await r.json();
     } catch (_) {}
-    session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+    const modelBytes = await fetchWithProgress(MODEL_URL, "الموديل");
+    setStatus("⏳ تجهيز الموديل (أول مرة قد يستغرق حتى دقيقة)…");
+    session = await withTimeout(
+      ort.InferenceSession.create(modelBytes, { executionProviders: ["wasm"], graphOptimizationLevel: "all" }),
+      90000, "انتهت مهلة تجهيز الموديل (90 ثانية). جرّب Ctrl+F5 أو متصفحاً آخر.");
     inputName = session.inputNames[0];
     const dims = session.inputMetadata?.[inputName]?.shape;
     if (Array.isArray(dims) && Number.isInteger(dims[2])) inputSize = dims[2];

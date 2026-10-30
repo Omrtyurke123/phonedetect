@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<!-- ▸ ده ملف للمذاكرة: نفس كود index.html بالظبط، مضاف عليه شرح بالعربي. -->
+<!-- ▸ أي سطر بيبدأ بعلامة ▸ هو شرح مش كود، وتقدر تمسحه من غير ما يتأثر الموقع. -->
+<!-- ▸ الملف 3 أجزاء: HTML هو الشكل، وCSS هو التصميم، وJavaScript هو المنطق. -->
+<!-- ▸ الجزء المهم للمذاكرة هو JavaScript، وهو في آخر الملف، فلو مستعجل روح له علطول. -->
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<!-- ▸ viewport بتخلي الصفحة تتظبط على شاشة الموبايل. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI ExamGuard — كشف الهاتف المحمول</title>
+<style>
+  /* ▸ متغيرات الألوان: بنعرّفها مرة واحدة وبنستخدمها بالشكل var(--اسم). غيّر لون هنا يتغير في الصفحة كلها. */
+  :root {
+    --bg: #0f1419; --panel: #1a212b; --line: #2a3441; --text: #e8edf3; --muted: #8b98a8;
+    --ok: #2ecc71; --alert: #ff3b3b; --accent: #4da3ff;
+  }
+  /* ▸ box-sizing بيخلي عرض العنصر يشمل الحشو والإطار، فالحسابات بتبقى أسهل. */
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif; line-height: 1.6; }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 1.25rem; }
+  header span { color: var(--muted); font-size: .9rem; }
+  /* ▸ main بيستخدم Grid: عمود واحد على الموبايل. */
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr; }
+  /* ▸ لو الشاشة 900 بكسل أو أكتر نقسم الصفحة عمودين: الفيديو (الأكبر) والإعدادات. */
+  @media (min-width: 900px) { main { grid-template-columns: 1.6fr 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  /* ▸ .stage هو صندوق الفيديو بنسبة 4:3. position: relative عشان نقدر نحط فوقه عناصر بـ absolute. */
+  .stage { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 10px; overflow: hidden; }
+  /* ▸ الفيديو والـ canvas فوق بعض بالظبط (نفس المكان والحجم)، والـ canvas شفاف وبيرسم المربعات فوق الفيديو. */
+  .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  /* ▸ شريط التنبيه الأحمر: مخفي (display: none) وبيظهر لما نضيف له كلاس on. */
+  .banner { position: absolute; top: 0; left: 0; right: 0; background: var(--alert); color: #fff; text-align: center;
+    font-weight: 700; font-size: 1.4rem; padding: 10px; display: none; letter-spacing: 1px; }
+  .banner.on { display: block; animation: blink 1s infinite; }
+  /* ▸ animation بسيط: الشفافية بتنزل لـ 75% في النص فيبان إن الشريط بيرمش. */
+  @keyframes blink { 50% { opacity: .75; } }
+  /* ▸ .hud هو النص الصغير تحت الفيديو (الرصدات وFPS). direction: ltr عشان الأرقام والإنجليزي ما يتلخبطوش. */
+  .hud { position: absolute; bottom: 8px; right: 10px; left: 10px; display: flex; justify-content: space-between;
+    font-size: .85rem; color: #fff; text-shadow: 0 1px 3px #000; direction: ltr; }
+  /* ▸ الرسالة اللي بتظهر في نص الفيديو قبل ما نشغّل الكاميرا. */
+  .placeholder { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 20px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 10px 18px; font-weight: 600; }
+  .primary { background: var(--accent); color: #04121f; }
+  .danger { background: #3a2226; color: #ff8d8d; }
+  /* ▸ شكل الزرار وهو معطّل (disabled). */
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  select { font: inherit; background: #0f1419; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px; }
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: flex; justify-content: space-between; font-size: .9rem; color: var(--muted); }
+  .field label b { color: var(--text); direction: ltr; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  #status { font-size: .9rem; color: var(--muted); margin-top: 10px; min-height: 1.4em; }
+  /* ▸ سجل التنبيهات: قائمة بدون نقط، ولو زادت عن 220 بكسل بيظهر لها scroll. */
+  #log { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; font-size: .88rem; }
+  #log li { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  #log li.alert { color: #ff8d8d; }
+  #log li.empty { color: var(--muted); border: 0; }
+  .note { font-size: .8rem; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ AI ExamGuard</h1>
+  <span>كشف الهاتف المحمول لحظياً — يعمل بالكامل داخل المتصفح، ولا يتم رفع أي فيديو لأي سيرفر</span>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="stage">
+      <!-- ▸ عنصر الفيديو: هنا بتظهر صورة الكاميرا. playsinline عشان الموبايل ما يفتحهوش fullscreen، وmuted لأن مفيش صوت. -->
+      <video id="video" playsinline muted></video>
+      <!-- ▸ الـ canvas الشفاف اللي بنرسم عليه المربعات فوق الفيديو. -->
+      <canvas id="overlay"></canvas>
+      <!-- ▸ شريط التنبيه، بيظهر لما الكود يضيف له كلاس on. -->
+      <div id="banner" class="banner">⚠️ PHONE DETECTED — تم رصد هاتف</div>
+      <div id="placeholder" class="placeholder">اضغط «تشغيل الكاميرا» للبدء</div>
+      <!-- ▸ مكان عرض الرصدات وFPS، والكود بيغير نصهم كل فريم. -->
+      <div class="hud"><span id="hudHits">Hits: 0/0</span><span id="hudFps">FPS: 0</span></div>
+    </div>
+    <div class="row">
+      <button id="startBtn" class="primary">▶ تشغيل الكاميرا</button>
+      <button id="stopBtn" class="danger" disabled>■ إيقاف</button>
+      <!-- ▸ قائمة اختيار الكاميرا، والكود بيملاها بالكاميرات المتاحة. -->
+      <select id="camSelect" title="اختيار الكاميرا"></select>
+      <button id="testSoundBtn" type="button">🔊 اختبار الصوت</button>
+    </div>
+    <div id="status">جارٍ تحميل الموديل…</div>
+  </section>
+
+  <aside style="display:grid; gap:16px; align-content:start;">
+    <section class="panel">
+      <h2>⚙️ الإعدادات</h2>
+      <!-- ▸ كل إعداد عبارة عن slider (input type=range) ورقم جنبه بيتحدث. القيمة الابتدائية في value. -->
+      <div class="field"><label>حد الثقة للتنبيه <b id="vPhone">0.35</b></label>
+        <input type="range" id="phoneConf" min="0.15" max="0.95" step="0.01" value="0.35"></div>
+      <div class="field"><label>حد الثقة للرسم على الشاشة <b id="vDisp">0.25</b></label>
+        <input type="range" id="dispConf" min="0.1" max="0.9" step="0.01" value="0.25"></div>
+      <div class="field"><label>عدد الفريمات المراقَبة (Window) <b id="vWin">10</b></label>
+        <input type="range" id="winSize" min="3" max="30" step="1" value="10"></div>
+      <div class="field"><label>أقل عدد رصدات للتنبيه (Min hits) <b id="vHits">5</b></label>
+        <input type="range" id="minHits" min="1" max="30" step="1" value="5"></div>
+      <div class="field"><label><span>🔊 صوت التنبيه</span>
+        <input type="checkbox" id="sound" checked></label></div>
+      <p class="note">زوّد «الثقة» أو «Min hits» لتقليل الإنذارات الكاذبة، وقلّلهم لحساسية أعلى.</p>
+    </section>
+
+    <section class="panel">
+      <h2>📋 سجل التنبيهات</h2>
+      <ul id="log"><li class="empty">لا توجد تنبيهات بعد</li></ul>
+    </section>
+  </aside>
+</main>
+
+<!-- ▸ نحمّل مكتبة ONNX Runtime Web من CDN. هي اللي بتشغّل الموديل جوه المتصفح وبتوفر الكائن ort. -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script>
+// ▸ ================= الجزء الأول: الإعدادات الثابتة =================
+// ----------------------------- SETTINGS -----------------------------
+// ▸ مسار ملف الموديل. لو دربت موديل خاص غيّر الاسم هنا.
+const MODEL_URL   = "model/yolo11n.onnx";   // لاحقاً: "model/best.onnx" للموديل المخصص
+// ▸ ملف اختياري فيه أسماء كلاسات الموديل المخصص، لو مش موجود بنستخدم قائمة COCO.
+const CLASSES_URL = "model/classes.json";   // اختياري: أسماء كلاسات الموديل المخصص (مصفوفة نصوص)
+// ▸ أسماء الكلاسات اللي نعتبرها هاتف. Set لأن البحث فيه سريع. أضف اسم كلاس الهاتف في موديلك هنا.
+const PHONE_CLASS_NAMES = new Set(["cell phone", "phone", "mobile phone", "cellphone", "smartphone"]);
+// ▸ حد التداخل في NMS: لو مربعين من نفس الكلاس متداخلين أكتر من 45% نشيل الأضعف.
+const NMS_IOU = 0.45;
+// --------------------------------------------------------------------
+
+// ▸ أسماء الـ 80 كلاس اللي اتدرب عليها الموديل (COCO). ترتيبها مهم: الرقم هو مكان الاسم في القائمة، يعني person رقم 0 وcell phone رقم 67.
+const COCO = ["person","bicycle","car","motorcycle","airplane","bus","train","truck","boat","traffic light",
+"fire hydrant","stop sign","parking meter","bench","bird","cat","dog","horse","sheep","cow","elephant","bear",
+"zebra","giraffe","backpack","umbrella","handbag","tie","suitcase","frisbee","skis","snowboard","sports ball",
+"kite","baseball bat","baseball glove","skateboard","surfboard","tennis racket","bottle","wine glass","cup",
+"fork","knife","spoon","bowl","banana","apple","sandwich","orange","broccoli","carrot","hot dog","pizza","donut",
+"cake","chair","couch","potted plant","bed","dining table","toilet","tv","laptop","mouse","remote","keyboard",
+"cell phone","microwave","oven","toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear",
+"hair drier","toothbrush"];
+
+// ▸ ================= الجزء الثاني: متغيرات عامة =================
+// ▸ اختصار: $("video") بدل document.getElementById("video") في كل مرة.
+const $ = id => document.getElementById(id);
+// ▸ عناصر الصفحة اللي هنستخدمها كتير، وctx هو أداة الرسم على الـ canvas الشفاف (2d).
+const video = $("video"), overlay = $("overlay"), ctx = overlay.getContext("2d");
+// ▸ canvas مخفي (مش في الصفحة) بنستخدمه كمنطقة شغل لتجهيز الصورة قبل إرسالها للموديل. willReadFrequently لأننا بنقرأ بكسلاته كل فريم.
+const work = document.createElement("canvas"), wctx = work.getContext("2d", { willReadFrequently: true });
+
+// ▸ session: جلسة الموديل بعد التحميل. inputName: اسم مدخل الموديل. inputSize: حجم الصورة اللي الموديل بياخدها (640).
+// ▸ classNames: أسماء الكلاسات. phoneIds: أرقام الكلاسات اللي هي هاتف.
+let session = null, inputName = "", inputSize = 640, classNames = COCO, phoneIds = new Set();
+// ▸ stream: بث الكاميرا. running: هل الحلقة شغالة؟ audioCtx: نظام الصوت.
+let stream = null, running = false, audioCtx = null;
+// ▸ history: آخر نتائج الفريمات (true/false). latched: هل أنذرنا بالفعل للهاتف الحالي؟ fps وprevT: لحساب سرعة المعالجة.
+let history = [], latched = false, fps = 0, prevT = performance.now();
+
+// ▸ ================= الجزء الثالث: ربط الإعدادات بالـ sliders =================
+// ---- settings UI ----
+// ▸ cfg بيخزن قيم الإعدادات الحالية. القيمة الفعلية بتتاخد من الـ sliders أول ما bind تشتغل، فرقم phoneConf هنا مجرد قيمة ابتدائية.
+const cfg = { phoneConf: .5, dispConf: .25, win: 10, minHits: 5, sound: true };
+// ▸ bind بتربط slider بإعداد في cfg ورقم بيتعرض جنبه: كل ما تحرك الـ slider بنحدّث القيمة والرقم.
+function bind(id, key, label, fmt = v => v) {
+  const el = $(id);
+  // ▸ update: نقرأ قيمة الـ slider كرقم، نخزنها في cfg، ونعرضها في الرقم جنب الـ slider.
+  const update = () => { cfg[key] = parseFloat(el.value); $(label).textContent = fmt(cfg[key]); };
+  // ▸ ننفذ update عند كل حركة (input)، ومرة فورية عشان القيمة الابتدائية تتطبق.
+  el.addEventListener("input", update); update();
+}
+// ▸ الربط: (id الـ slider، اسم الإعداد في cfg، id الرقم المعروض، طريقة تنسيق الرقم).
+bind("phoneConf", "phoneConf", "vPhone", v => v.toFixed(2));
+bind("dispConf", "dispConf", "vDisp", v => v.toFixed(2));
+bind("winSize", "win", "vWin");
+bind("minHits", "minHits", "vHits");
+// ▸ الـ checkbox بتاع الصوت: لما يتغير نخزن true/false.
+$("sound").addEventListener("change", e => cfg.sound = e.target.checked);
+
+// ▸ دالة صغيرة لتغيير رسالة الحالة تحت الفيديو.
+function setStatus(t) { $("status").textContent = t; }
+
+// ▸ ================= الجزء الرابع: تحميل الموديل =================
+// ---- model ----
+// ▸ async لأن التحميل بياخد وقت، وبنستخدم await عشان نستنى النتيجة من غير ما نجمّد الصفحة.
+async function loadModel() {
+  // ▸ try/catch: لو حصل أي خطأ (مثلاً الملف مش موجود) نعرض رسالة مفهومة بدل ما الصفحة تتعطل.
+  try {
+    // ▸ بنقول للمكتبة تجيب ملفات WebAssembly (اللي بيتنفذ بيها الحساب) من نفس الـ CDN.
+    ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+    // ▸ عدد الـ threads: لو الصفحة بتدعم التشغيل المتوازي نستخدم لحد 4، غير كده thread واحد.
+    ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+    // ▸ نحاول نقرأ classes.json (للموديل المخصص). لو مش موجود أو فيه مشكلة نكمل بقائمة COCO.
+    try {
+      const r = await fetch(CLASSES_URL);
+      if (r.ok) classNames = await r.json();
+    } catch (_) {}
+    // ▸ هنا بيتحمل الموديل فعلاً. executionProviders: ["wasm"] يعني التشغيل على المعالج (CPU) جوه المتصفح.
+    session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+    // ▸ اسم مدخل الموديل (هنحتاجه وقت التشغيل).
+    inputName = session.inputNames[0];
+    // ▸ بنقرا حجم الصورة المتوقع من الموديل نفسه (shape = [1,3,640,640])، فلو صدّرته بحجم تاني يشتغل من غير تعديل.
+    const dims = session.inputMetadata?.[inputName]?.shape;
+    if (Array.isArray(dims) && Number.isInteger(dims[2])) inputSize = dims[2];
+    // ▸ نضبط حجم الـ canvas المخفي على حجم الإدخال.
+    work.width = work.height = inputSize;
+    // ▸ نجمع أرقام الكلاسات اللي اسمها في PHONE_CLASS_NAMES. بنحوّل الاسم لحروف صغيرة ونبدل _ بمسافة عشان المطابقة تبقى مرنة.
+    phoneIds = new Set();
+    classNames.forEach((n, i) => { if (PHONE_CLASS_NAMES.has(String(n).toLowerCase().replace(/_/g, " "))) phoneIds.add(i); });
+    // ▸ لو لقينا كلاس هاتف نبلّغ إن كل شيء جاهز، غير كده نحذّر إن التنبيهات مش هتشتغل.
+    if (phoneIds.size) setStatus(`✅ الموديل جاهز (${classNames.length} كلاس). اضغط «تشغيل الكاميرا».`);
+    else setStatus("⚠️ الموديل لا يحتوي كلاس هاتف — التنبيهات معطّلة. تحتاج تدريب موديل مخصص.");
+    // ▸ نفعّل زرار التشغيل بعد ما الموديل بقى جاهز.
+    $("startBtn").disabled = false;
+  } catch (e) {
+    console.error(e);
+    setStatus("❌ تعذّر تحميل الموديل: " + e.message + " — تأكد من وجود الملف " + MODEL_URL);
+  }
+}
+
+// ▸ ================= الجزء الخامس: الكاميرا =================
+// ---- camera ----
+// ▸ بتملا قائمة الكاميرات بالأجهزة المتاحة (الأسماء بتظهر بس بعد ما المستخدم يسمح بالكاميرا).
+async function listCameras() {
+  // ▸ enumerateDevices بترجع كل الأجهزة، واحنا بنفلتر الكاميرات بس (videoinput).
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+  // ▸ نحفظ الاختيار الحالي عشان نرجّعه بعد إعادة بناء القائمة.
+  const sel = $("camSelect"); const cur = sel.value;
+  sel.innerHTML = "";
+  // ▸ لكل كاميرا نعمل خيار: القيمة هي معرّف الجهاز، والنص هو الاسم (أو Camera رقم لو الاسم مش متاح).
+  devs.forEach((d, i) => { const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || `Camera ${i}`; sel.appendChild(o); });
+  if (cur) sel.value = cur;
+}
+
+// ▸ بتتنفذ لما المستخدم يضغط «تشغيل الكاميرا».
+async function startCamera() {
+  // ▸ لو المتصفح مفيهوش دعم للكاميرا (غالباً لأن الصفحة مش HTTPS) نبلّغ ونقف.
+  if (!navigator.mediaDevices?.getUserMedia) { setStatus("❌ المتصفح لا يدعم الكاميرا، أو الصفحة ليست على HTTPS."); return; }
+  try {
+    // ▸ نجهز الصوت هنا لأن الضغطة على الزرار هي اللي بتسمح للمتصفح بتشغيل الصوت.
+    ensureAudio();
+    const id = $("camSelect").value;
+    // ▸ getUserMedia بتطلب صلاحية الكاميرا وبترجع بث (stream). لو اتحدد جهاز نطلبه بالضبط (exact)، وغير كده أي كاميرا. الدقة 640×480 والصوت مش مطلوب.
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: id ? { deviceId: { exact: id }, width: 640, height: 480 } : { width: 640, height: 480 }, audio: false });
+    // ▸ نوصّل البث بعنصر الفيديو ونشغّله.
+    video.srcObject = stream; await video.play();
+    // ▸ دلوقتي بعد الصلاحية نقدر نملا قائمة الكاميرات بأسمائها.
+    await listCameras();
+    // ▸ نخلي الـ canvas الشفاف بنفس حجم الفيديو بالظبط عشان المربعات تتحط في مكانها الصح.
+    overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+    // ▸ نخفي رسالة «اضغط للتشغيل» ونبدّل حالة الزراير.
+    $("placeholder").style.display = "none";
+    $("startBtn").disabled = true; $("stopBtn").disabled = false;
+    // ▸ نصفّر الحالة ونشغّل الحلقة الرئيسية.
+    history = []; latched = false; running = true; prevT = performance.now();
+    setStatus("🟢 المراقبة تعمل");
+    loop();
+  } catch (e) {
+    // ▸ أشهر الأسباب: رفض المستخدم الصلاحية، أو برنامج تاني فاتح الكاميرا.
+    setStatus("❌ تعذّر فتح الكاميرا: " + e.message + " (اسمح بصلاحية الكاميرا وأغلق أي برنامج يستخدمها).");
+  }
+}
+
+// ▸ بتتنفذ لما المستخدم يضغط «إيقاف».
+function stopCamera() {
+  // ▸ running = false بتوقف الحلقة الرئيسية في الفريم الجاي.
+  running = false;
+  // ▸ نوقف كل مسارات الكاميرا (ده اللي بيطفي لمبة الكاميرا).
+  stream?.getTracks().forEach(t => t.stop());
+  // ▸ نفصل البث ونمسح المربعات المرسومة.
+  video.srcObject = null; ctx.clearRect(0, 0, overlay.width, overlay.height);
+  // ▸ نخفي شريط التنبيه ونرجّع رسالة البداية.
+  $("banner").classList.remove("on"); $("placeholder").style.display = "grid";
+  // ▸ زرار التشغيل يتفعّل بس لو الموديل متحمل (session موجود).
+  $("startBtn").disabled = !session; $("stopBtn").disabled = true;
+  setStatus("⏹ تم الإيقاف");
+}
+
+// ▸ ================= الجزء السادس: تجهيز الصورة للموديل (أهم جزء) =================
+// ---- inference ----
+// ▸ الموديل بيتوقع صورة مربعة 640×640 بقيم من 0 لـ 1 وبترتيب قنوات (R كلها ثم G كلها ثم B كلها). الدالة دي بتجهز كده.
+function preprocess() {
+  // ▸ vw وvh أبعاد فريم الفيديو، وS حجم مربع الموديل.
+  const vw = video.videoWidth, vh = video.videoHeight, S = inputSize;
+  // ▸ نسبة التصغير: نختار الأصغر عشان الصورة كلها تدخل في المربع من غير ما تتشوه.
+  const scale = Math.min(S / vw, S / vh);
+  // ▸ الأبعاد الجديدة بعد التصغير.
+  const nw = Math.round(vw * scale), nh = Math.round(vh * scale);
+  // ▸ الهوامش (padding) اللي هتتحط على الجانبين لتوسيط الصورة. هنحتاجها وإحنا بنرجّع المربعات للصورة الأصلية.
+  const padX = Math.floor((S - nw) / 2), padY = Math.floor((S - nh) / 2);
+  // ▸ نملا المربع كله بلون رمادي (114)، وده نفس لون الهوامش اللي اتدرب عليه الموديل (تقنية letterbox).
+  wctx.fillStyle = "rgb(114,114,114)"; wctx.fillRect(0, 0, S, S);
+  // ▸ نرسم الفريم المصغّر في نص المربع.
+  wctx.drawImage(video, padX, padY, nw, nh);
+  // ▸ نقرا بكسلات المربع. كل بكسل 4 قيم متتالية (R,G,B,A) بين 0 و255. بنجهز مصفوفة Float32 حجمها 3 × (عدد البكسلات).
+  const px = wctx.getImageData(0, 0, S, S).data, n = S * S, f = new Float32Array(3 * n);
+  // ▸ نوزع القيم على ثلاث قنوات منفصلة (R ثم G ثم B)، ونقسم على 255 عشان تبقى بين 0 و1. المتغير j بيمشي 4 خطوات لكل بكسل (عشان نتخطى A).
+  for (let i = 0, j = 0; i < n; i++, j += 4) { f[i] = px[j] / 255; f[n + i] = px[j + 1] / 255; f[2 * n + i] = px[j + 2] / 255; }
+  // ▸ نغلف المصفوفة في Tensor بشكل [1, 3, S, S] (صورة واحدة، 3 قنوات). ونرجّع معاها scale وpad عشان نحتاجهم بعدين.
+  return { tensor: new ort.Tensor("float32", f, [1, 3, S, S]), scale, padX, padY };
+}
+
+// ▸ IoU: نسبة تداخل مربعين = مساحة التقاطع ÷ مساحة الاتحاد. من 0 (مفيش تداخل) لـ 1 (نفس المربع).
+function iou(a, b) {
+  // ▸ حدود مستطيل التقاطع.
+  const x1 = Math.max(a.x1, b.x1), y1 = Math.max(a.y1, b.y1), x2 = Math.min(a.x2, b.x2), y2 = Math.min(a.y2, b.y2);
+  // ▸ مساحة التقاطع (Math.max(0, ..) عشان لو مفيش تقاطع تبقى صفر).
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  // ▸ مساحة الاتحاد = مساحة الاتنين - التقاطع.
+  const ua = (a.x2 - a.x1) * (a.y2 - a.y1) + (b.x2 - b.x1) * (b.y2 - b.y1) - inter;
+  return ua > 0 ? inter / ua : 0;
+}
+
+// ▸ ================= الجزء السابع: تفسير ناتج الموديل =================
+// ▸ بتحوّل الأرقام الخام اللي طلعت من الموديل لقائمة مربعات واضحة (الكلاس، الثقة، الإحداثيات).
+function postprocess(out, pre) {
+  // ▸ شكل الناتج [1, 84, 8400]: 8400 مربع محتمل، كل واحد فيه 4 أرقام للمربع + 80 رقم ثقة (واحد لكل كلاس).
+  const d = out.dims;                      // [1, 4+nc, N]
+  // ▸ nc عدد الكلاسات، N عدد المربعات المحتملة، data هي كل الأرقام في مصفوفة واحدة مسطّحة.
+  const nc = d[1] - 4, N = d[2], data = out.data, boxes = [];
+  for (let i = 0; i < N; i++) {
+    // ▸ نلاقي الكلاس الأعلى ثقة للمربع رقم i. الرقم c للمربع i موجود في data عند [(4 + c) * N + i] لأن الأرقام مرتبة صف ورا صف.
+    let best = -1, bs = 0;
+    for (let c = 0; c < nc; c++) { const s = data[(4 + c) * N + i]; if (s > bs) { bs = s; best = c; } }
+    // ▸ لو أعلى ثقة أقل من حد الرسم نتجاهل المربع ده.
+    if (bs < cfg.dispConf) continue;
+    // ▸ أول 4 صفوف هما: مركز المربع (cx,cy) وعرضه وارتفاعه (w,h) بالنسبة لمربع 640×640.
+    const cx = data[i], cy = data[N + i], w = data[2 * N + i], h = data[3 * N + i];
+    // ▸ نحوّل (مركز + عرض + ارتفاع) لـ (الركن الأيسر العلوي والركن الأيمن السفلي)، ثم نطرح الهوامش ونقسم على التصغير، فيرجع المربع لإحداثيات الفيديو الأصلي.
+    boxes.push({ cls: best, conf: bs,
+      x1: (cx - w / 2 - pre.padX) / pre.scale, y1: (cy - h / 2 - pre.padY) / pre.scale,
+      x2: (cx + w / 2 - pre.padX) / pre.scale, y2: (cy + h / 2 - pre.padY) / pre.scale });
+  }
+  // ▸ NMS (Non-Maximum Suppression): أول خطوة نرتب المربعات من الأعلى ثقة للأقل.
+  boxes.sort((a, b) => b.conf - a.conf);
+  const keep = [];
+  // ▸ نمشي على المربعات بالترتيب: لو فيه مربع محتفظ بيه من نفس الكلاس بيتداخل معاه أكتر من NMS_IOU نرميه، وغير كده نحتفظ بيه. النتيجة مربع واحد لكل جسم.
+  for (const b of boxes) if (!keep.some(k => k.cls === b.cls && iou(k, b) > NMS_IOU)) keep.push(b);
+  return keep;
+}
+
+// ▸ ================= الجزء الثامن: الرسم =================
+// ▸ أعلى ثقة لهاتف في الفريم الحالي (بتتعرض في الـ HUD عشان تساعدك تضبط الحد).
+let bestPhone = 0;
+// ▸ بترسم المربعات والأسماء على الـ canvas الشفاف، وبترجّع true لو فيه هاتف مؤكد في الفريم.
+function draw(dets) {
+  // ▸ نمسح رسم الفريم السابق وننظم إعدادات الخط والإطار.
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  ctx.lineWidth = 2; ctx.font = "600 15px Arial"; ctx.textBaseline = "bottom";
+  let phone = false; bestPhone = 0;
+  for (const b of dets) {
+    // ▸ هل الكلاس ده هاتف؟ ولو آه نسجل أعلى ثقة له.
+    const isPhoneClass = phoneIds.has(b.cls);
+    if (isPhoneClass) bestPhone = Math.max(bestPhone, b.conf);
+    // ▸ هاتف «مؤكد» = كلاس هاتف وثقته وصلت لحد التنبيه.
+    const isPhone = isPhoneClass && b.conf >= cfg.phoneConf;
+    if (isPhone) phone = true;
+    // أحمر = هاتف مؤكد، برتقالي = هاتف بثقة أقل من حد التنبيه، أخضر = أي شيء آخر
+    const col = isPhone ? "#ff3b3b" : (isPhoneClass ? "#ff9f1c" : "#2ecc71");
+    // ▸ نرسم إطار المربع (strokeRect بياخد: x، y، العرض، الارتفاع).
+    ctx.strokeStyle = col; ctx.strokeRect(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
+    // ▸ نص التسمية: اسم الكلاس ورقم الثقة. لو الاسم مش موجود (??) نكتب class ورقمه.
+    const label = `${classNames[b.cls] ?? "class " + b.cls} ${b.conf.toFixed(2)}`;
+    // ▸ عرض خلفية التسمية = عرض النص + هامش، وتحط فوق المربع (بحد أدنى 20 بكسل من الحافة العلوية عشان ما تطلعش بره).
+    const tw = ctx.measureText(label).width + 8, ty = Math.max(b.y1, 20);
+    // ▸ خلفية ملونة للتسمية ثم النص الأبيض فوقها.
+    ctx.fillStyle = col; ctx.fillRect(b.x1, ty - 20, tw, 20);
+    ctx.fillStyle = "#fff"; ctx.fillText(label, b.x1 + 4, ty - 3);
+  }
+  return phone;
+}
+
+// ▸ ================= الجزء التاسع: الصوت والسجل =================
+// ▸ بتتأكد إن نظام الصوت موجود وشغال. المتصفحات بتوقفه (suspended) لحد ما المستخدم يتفاعل مع الصفحة، فبنعمله resume.
+function ensureAudio() {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state !== "running") audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+
+// صوت إنذار: 3 نغمات قصيرة بصوت عالٍ
+// ▸ force = true بيشغّل الصوت حتى لو المستخدم كتم الصوت من الإعدادات (بنستخدمه في زرار «اختبار الصوت»).
+function beep(force = false) {
+  if (!force && !cfg.sound) return;
+  const ac = ensureAudio();
+  // ▸ وقت البداية = الوقت الحالي في نظام الصوت + 0.02 ثانية.
+  const t0 = ac.currentTime + 0.02;
+  // ▸ 3 نغمات، كل واحدة بتبدأ بعد اللي قبلها بـ 0.28 ثانية.
+  for (let k = 0; k < 3; k++) {
+    // ▸ oscillator بيولّد النغمة، وgain بيتحكم في علو الصوت.
+    const o = ac.createOscillator(), g = ac.createGain();
+    // ▸ موجة مربعة (صوت حاد وواضح). التردد بيتبدل: 1200Hz للنغمة الأولى والتالتة، و880Hz للتانية.
+    o.type = "square"; o.frequency.value = k % 2 ? 880 : 1200;
+    // ▸ التوصيل: المولّد ثم التحكم في الصوت ثم السماعات.
+    o.connect(g); g.connect(ac.destination);
+    // ▸ s هو بداية النغمة رقم k.
+    const s = t0 + k * 0.28;
+    // ▸ منحنى علو الصوت: نبدأ تقريباً من صمت، نطلع لـ 0.6 بسرعة (عشان ما يبقاش فيه طقة)، نثبت، ثم ننزل تاني.
+    g.gain.setValueAtTime(0.0001, s);
+    g.gain.exponentialRampToValueAtTime(0.6, s + 0.02);
+    g.gain.setValueAtTime(0.6, s + 0.18);
+    g.gain.exponentialRampToValueAtTime(0.0001, s + 0.24);
+    // ▸ نشغّل المولّد ونوقفه بعد 0.26 ثانية.
+    o.start(s); o.stop(s + 0.26);
+  }
+}
+
+// ▸ بتضيف سطر جديد في سجل التنبيهات بوقت الإنذار.
+function logAlert() {
+  // ▸ نشيل رسالة «لا توجد تنبيهات بعد» لو كانت موجودة (?. معناها: لو العنصر موجود).
+  const ul = $("log"); ul.querySelector(".empty")?.remove();
+  // ▸ ننشئ عنصر قائمة جديد بكلاس alert (لون أحمر) وفيه الوقت بالتنسيق المصري.
+  const li = document.createElement("li"); li.className = "alert";
+  li.textContent = `🚨 ${new Date().toLocaleTimeString("ar-EG")} — تم رصد هاتف`;
+  // ▸ prepend بتحطه في أول القائمة، فالأحدث يظهر فوق.
+  ul.prepend(li);
+}
+
+// ▸ ================= الجزء العاشر: الحلقة الرئيسية (قلب البرنامج) =================
+// ▸ بتتكرر مع كل فريم: تجهيز الصورة ثم الموديل ثم تفسير الناتج ثم الرسم ثم منطق الإنذار.
+async function loop() {
+  // ▸ لو المستخدم ضغط «إيقاف» نخرج.
+  if (!running) return;
+  // ▸ readyState >= 2 يعني الفيديو فيه فريم جاهز للقراءة.
+  if (video.readyState >= 2) {
+    try {
+      // ▸ 1) نجهز الصورة.
+      const pre = preprocess();
+      // ▸ 2) نشغّل الموديل (await لأن الحساب بياخد وقت). المدخل بيتبعت باسمه، والنتيجة بتطلع بمفتاح اسم المخرج.
+      const res = await session.run({ [inputName]: pre.tensor });
+      // ▸ 3) نفسر الناتج لمربعات.
+      const dets = postprocess(res[session.outputNames[0]], pre);
+      // ▸ 4) نرسم، والدالة بترجع هل فيه هاتف مؤكد. لو الموديل مفيهوش كلاس هاتف نرسم بس ونعتبر النتيجة false.
+      const phoneSeen = phoneIds.size ? draw(dets) : (draw(dets), false);
+
+      // ▸ 5) منطق النافذة المتحركة: نضيف نتيجة الفريم الحالي، ونشيل الأقدم لو عدّينا حجم النافذة.
+      history.push(phoneSeen);
+      while (history.length > cfg.win) history.shift();
+      // ▸ hits هو عدد الفريمات اللي ظهر فيها هاتف من آخر N فريم. وconfirmed معناها وصلنا للحد الأدنى للتنبيه.
+      const hits = history.filter(Boolean).length;
+      const confirmed = hits >= cfg.minHits;
+
+      // ▸ الإنذار مرة واحدة لكل ظهور: لو اتأكد ومش منبهين قبل كده، نصفّر ونرن ونسجل. latched بيمنع التكرار.
+      if (confirmed && !latched) { latched = true; beep(); logAlert(); }
+      // ▸ لما الهاتف يختفي تماماً من النافذة (صفر رصدات) نعيد تسليح الإنذار للظهور الجاي.
+      else if (hits === 0) latched = false;
+      // ▸ شريط التنبيه الأحمر يظهر طول ما confirmed = true ويختفي لما false.
+      $("banner").classList.toggle("on", confirmed);
+
+      // ▸ حساب FPS: نحسب السرعة اللحظية (1000 ÷ المللي ثانية بين الفريمين) ونعمل متوسط متحرك 90% قديم + 10% جديد عشان الرقم يبقى ثابت.
+      const now = performance.now();
+      fps = 0.9 * fps + 0.1 * (1000 / Math.max(now - prevT, 1)); prevT = now;
+      // ▸ نعرض الرصدات وأعلى ثقة هاتف والحد المطلوب، والـ FPS.
+      $("hudHits").textContent = `Phone hits: ${hits}/${history.length}  |  best phone conf: ${bestPhone.toFixed(2)} (need ≥ ${cfg.phoneConf.toFixed(2)})`;
+      $("hudFps").textContent = `FPS: ${fps.toFixed(0)}`;
+    // ▸ لو حصل أي خطأ أثناء التحليل نعرضه ونوقف الحلقة بدل ما تتكرر الأخطاء.
+    } catch (e) { console.error(e); setStatus("❌ خطأ أثناء التحليل: " + e.message); running = false; return; }
+  }
+  // ▸ نطلب من المتصفح ينادي loop تاني قبل رسم الفريم الجاي. ده بيخلي الحلقة مستمرة بسرعة الشاشة.
+  requestAnimationFrame(loop);
+}
+
+// ▸ ================= الجزء الأخير: تشغيل البرنامج =================
+// ▸ زرار التشغيل معطّل لحد ما الموديل يتحمل.
+$("startBtn").disabled = true;
+// ▸ ربط الزراير بالدوال بتاعتها.
+$("startBtn").addEventListener("click", startCamera);
+$("stopBtn").addEventListener("click", stopCamera);
+// ▸ زرار اختبار الصوت بيشغّل beep(true) علطول.
+$("testSoundBtn").addEventListener("click", () => beep(true));
+// فك قفل الصوت عند أول لمسة في الصفحة (قيد المتصفحات)
+// ▸ once: true يعني الحدث ده بيتنفذ مرة واحدة بس.
+document.addEventListener("pointerdown", () => ensureAudio(), { once: true });
+// ▸ أول سطر بيتنفذ فعلياً: نبدأ تحميل الموديل أول ما الصفحة تفتح.
+loadModel();
+</script>
+</body>
+</html>
